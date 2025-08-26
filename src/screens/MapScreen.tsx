@@ -15,6 +15,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -24,7 +25,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, spacing, borderRadius, typography } from '../theme';
 import { listPlaces, createPlace } from '../services/places';
 import { uploadPhoto } from '../services/photos';
-import { upsertUserByDevice } from '../services/users';
+import { useUser } from '../context/UserContext';
 import * as ImagePicker from 'expo-image-picker';
 import type { Place } from '../types';
 
@@ -55,6 +56,8 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
   const filterAnim = useRef(new Animated.Value(0)).current;
   const chipsRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
+  const { user } = useUser();
   
   const [places, setPlaces] = useState<Place[]>([]);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
@@ -76,6 +79,12 @@ export default function MapScreen() {
   const [isQuiet, setIsQuiet] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
   const [addingPlace, setAddingPlace] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [searchLocation, setSearchLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<Array<{ address: string; latitude: number; longitude: number }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // États pour les filtres
   const [filters, setFilters] = useState<FilterState>({
@@ -151,6 +160,31 @@ export default function MapScreen() {
     loadPlaces();
   }, []);
 
+  // Gérer le centrage sur un lieu depuis la liste
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      const params = navigation.getState().routes.find(route => route.name === 'Map')?.params as any;
+      if (params?.centerOnPlace) {
+        const { latitude, longitude, placeId } = params.centerOnPlace;
+        
+        // Centrer la carte sur le lieu
+        if (mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude,
+            longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          });
+        }
+        
+        // Nettoyer les paramètres
+        navigation.setParams({ centerOnPlace: undefined });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
   const toggleFilters = () => {};
   const focusFilters = () => {
     try {
@@ -195,6 +229,125 @@ export default function MapScreen() {
     }
   };
 
+  const handleSearch = async () => {
+    if (searchQuery.trim()) {
+      setIsSearching(true);
+      try {
+        // Géocodage de l'adresse recherchée
+        const geocodeResult = await Location.geocodeAsync(searchQuery.trim());
+        
+        if (geocodeResult.length > 0) {
+          const location = geocodeResult[0];
+          setSearchLocation({ latitude: location.latitude, longitude: location.longitude });
+          
+          // Déplacer la carte vers la localisation trouvée
+          if (mapRef.current) {
+            mapRef.current.animateToRegion({
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            });
+          }
+          
+          // Filtrage des lieux autour de cette localisation
+          const filtered = places.filter(place => {
+            const distance = calculateDistance(
+              location.latitude,
+              location.longitude,
+              place.latitude,
+              place.longitude
+            );
+            
+            // Si pas de limite de distance, afficher tous les lieux
+            if (filters.maxDistance === -1) return true;
+            
+            return distance <= filters.maxDistance;
+          });
+          
+          setSearchResults(filtered);
+        } else {
+          // Si pas de géocodage, recherche textuelle simple
+          const filtered = places.filter(place => 
+            place.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            place.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            place.view_type?.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          setSearchResults(filtered);
+        }
+      } catch (error) {
+        console.error('Erreur de géocodage:', error);
+        // Fallback vers la recherche textuelle
+        const filtered = places.filter(place => 
+          place.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          place.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          place.view_type?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        setSearchResults(filtered);
+      }
+      setIsSearching(false);
+    }
+  };
+
+  const searchAddressSuggestions = async (query: string) => {
+    try {
+      const geocodeResult = await Location.geocodeAsync(query);
+      const suggestions = geocodeResult.slice(0, 5).map(result => ({
+        address: query, // Pour l'instant on utilise la requête, on pourrait améliorer avec reverse geocoding
+        latitude: result.latitude,
+        longitude: result.longitude
+      }));
+      
+      setAddressSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+    } catch (error) {
+      console.error('Erreur lors de la recherche de suggestions:', error);
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const selectAddressSuggestion = (suggestion: { address: string; latitude: number; longitude: number }) => {
+    setSearchQuery(suggestion.address);
+    setSearchLocation({ latitude: suggestion.latitude, longitude: suggestion.longitude });
+    setShowSuggestions(false);
+    setAddressSuggestions([]);
+    
+    // Déplacer la carte vers la localisation sélectionnée
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: suggestion.latitude,
+        longitude: suggestion.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+    
+    // Filtrer les lieux autour de cette localisation
+    const filtered = places.filter(place => {
+      const distance = calculateDistance(
+        suggestion.latitude,
+        suggestion.longitude,
+        place.latitude,
+        place.longitude
+      );
+      
+      if (filters.maxDistance === -1) return true;
+      return distance <= filters.maxDistance;
+    });
+    
+    setSearchResults(filtered);
+  };
+
+  const clearSearch = async () => {
+    setSearchQuery('');
+    setIsSearching(false);
+    setSearchResults([]);
+    setSearchLocation(null);
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+  };
+
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -208,23 +361,42 @@ export default function MapScreen() {
   };
 
     const getFilteredPlaces = useMemo((): Place[] => {
-    if (!userLocation) return places;
+    // Si on a des résultats de recherche, on les utilise
+    const placesToFilter = searchResults.length > 0 ? searchResults : places;
+    
+    // Si pas de localisation de référence, retourner tous les lieux
+    const referenceLocation = searchLocation || userLocation;
+    if (!referenceLocation) return placesToFilter;
 
     try {
-      console.log(`🔍 Filtrage: ${places.length} lieux, filtres actifs:`, filters);
+      console.log(`🔍 Filtrage: ${placesToFilter.length} lieux, filtres actifs:`, filters);
       
-      const filtered = places.filter(place => {
+      const filtered = placesToFilter.filter(place => {
         try {
-          // Vérification de la distance
-          const distance = calculateDistance(
-            userLocation.coords.latitude,
-            userLocation.coords.longitude,
-            place.latitude,
-            place.longitude
-          );
-          
-          if (distance > filters.maxDistance) {
-            return false;
+          // Vérification de la distance (sauf si pas de limite)
+          if (filters.maxDistance !== -1) {
+            let refLat, refLng;
+            
+            if ('coords' in referenceLocation) {
+              // C'est un LocationObject (userLocation)
+              refLat = referenceLocation.coords.latitude;
+              refLng = referenceLocation.coords.longitude;
+            } else {
+              // C'est un objet simple (searchLocation)
+              refLat = referenceLocation.latitude;
+              refLng = referenceLocation.longitude;
+            }
+            
+            const distance = calculateDistance(
+              refLat,
+              refLng,
+              place.latitude,
+              place.longitude
+            );
+            
+            if (distance > filters.maxDistance) {
+              return false;
+            }
           }
 
           // Filtres booléens simplifiés
@@ -312,8 +484,10 @@ export default function MapScreen() {
 
     setAddingPlace(true);
     try {
-      // Create or get user first
-      const user = await upsertUserByDevice('dev-device-id');
+      if (!user) {
+        Alert.alert('Erreur', 'Vous devez être connecté pour ajouter un lieu');
+        return;
+      }
       
       const newPlace = await createPlace({
         title: newPlaceTitle.trim(),
@@ -375,7 +549,7 @@ export default function MapScreen() {
   }, [filters]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* Carte en plein écran */}
@@ -402,7 +576,7 @@ export default function MapScreen() {
           customMapStyle={[
             {
               "elementType": "geometry",
-              "stylers": [{"color": "#f8f9fa"}]
+              "stylers": [{"color": "#f5f5f5"}]
             },
             {
               "elementType": "labels.icon",
@@ -410,7 +584,7 @@ export default function MapScreen() {
             },
             {
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#2c3e50"}]
+              "stylers": [{"color": "#1a1a2e"}]
             },
             {
               "elementType": "labels.text.stroke",
@@ -419,22 +593,27 @@ export default function MapScreen() {
             {
               "featureType": "administrative",
               "elementType": "geometry.stroke",
-              "stylers": [{"color": "#c9c9c9"}]
+              "stylers": [{"color": "#4ecdc4"}]
             },
             {
               "featureType": "administrative.land_parcel",
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#bdbdbd"}]
+              "stylers": [{"color": "#45b7d1"}]
             },
             {
               "featureType": "poi.park",
               "elementType": "geometry",
-              "stylers": [{"color": "#e8f5e8"}]
+              "stylers": [{"color": "#96ceb4"}]
+            },
+            {
+              "featureType": "poi.park",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#2e7d32"}]
             },
             {
               "featureType": "poi.park",
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#2e7d32"}]
+              "stylers": [{"color": "#1b5e20"}]
             },
             {
               "featureType": "road",
@@ -444,52 +623,117 @@ export default function MapScreen() {
             {
               "featureType": "road",
               "elementType": "geometry.stroke",
-              "stylers": [{"color": "#e0e0e0"}]
+              "stylers": [{"color": "#ff6b6b"}]
             },
             {
               "featureType": "road",
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#424242"}]
+              "stylers": [{"color": "#1a1a2e"}]
             },
             {
               "featureType": "road.highway",
               "elementType": "geometry",
-              "stylers": [{"color": "#f5f5f5"}]
+              "stylers": [{"color": "#f39c12"}]
             },
             {
               "featureType": "road.highway",
               "elementType": "geometry.stroke",
-              "stylers": [{"color": "#e0e0e0"}]
+              "stylers": [{"color": "#e67e22"}]
             },
             {
               "featureType": "road.highway",
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#616161"}]
+              "stylers": [{"color": "#ffffff"}]
             },
             {
               "featureType": "transit",
               "elementType": "geometry",
-              "stylers": [{"color": "#e5e5e5"}]
+              "stylers": [{"color": "#3498db"}]
             },
             {
               "featureType": "transit.station",
               "elementType": "geometry",
-              "stylers": [{"color": "#eeeeee"}]
+              "stylers": [{"color": "#2980b9"}]
             },
             {
               "featureType": "water",
               "elementType": "geometry",
-              "stylers": [{"color": "#c9d6ff"}]
+              "stylers": [{"color": "#74b9ff"}]
+            },
+            {
+              "featureType": "water",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#0984e3"}]
             },
             {
               "featureType": "water",
               "elementType": "labels.text.fill",
-              "stylers": [{"color": "#1976d2"}]
+              "stylers": [{"color": "#ffffff"}]
             },
             {
               "featureType": "landscape.natural",
               "elementType": "geometry",
-              "stylers": [{"color": "#f0f8f0"}]
+              "stylers": [{"color": "#a8e6cf"}]
+            },
+            {
+              "featureType": "landscape.natural.terrain",
+              "elementType": "geometry",
+              "stylers": [{"color": "#81c784"}]
+            },
+            {
+              "featureType": "poi.business",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "poi.business",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#e9ecef"}]
+            },
+            {
+              "featureType": "poi.school",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "poi.school",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#e9ecef"}]
+            },
+            {
+              "featureType": "poi.medical",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "poi.medical",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#e9ecef"}]
+            },
+            {
+              "featureType": "poi",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "poi",
+              "elementType": "geometry.stroke",
+              "stylers": [{"color": "#e9ecef"}]
+            },
+            {
+              "featureType": "administrative",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "administrative.locality",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
+            },
+            {
+              "featureType": "administrative.neighborhood",
+              "elementType": "geometry",
+              "stylers": [{"color": "#f8f9fa"}]
             }
           ]}
         >
@@ -532,177 +776,212 @@ export default function MapScreen() {
         </MapView>
       </View>
 
-      {/* Overlay en haut avec stats et bouton filtres */}
-      <SafeAreaView style={styles.topOverlay}>
-        <View style={styles.topContent}>
-          {/* Stats améliorées avec titres */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="location" size={16} color="#4ecdc4" />
-              </View>
-              <View style={styles.statContent}>
-                <Text style={styles.statNumber}>{filteredPlaces.length}</Text>
-                <Text style={styles.statLabel}>lieux trouvés</Text>
-              </View>
+      {/* Header adaptatif pour tous les appareils */}
+      <View style={[styles.headerContainer, { paddingTop: insets.top }]}>
+        {/* Barre de recherche élégante avec distance intégrée */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBar}>
+            <View style={styles.searchIconContainer}>
+              <Ionicons name="search" size={20} color="#6b7280" />
             </View>
-            <View style={styles.statItem}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="heart" size={16} color="#ff6b6b" />
-              </View>
-              <View style={styles.statContent}>
-                <Text style={styles.statNumber}>{filteredPlaces.filter(p => p.is_good_for_date).length}</Text>
-                <Text style={styles.statLabel}>bons pour un date</Text>
-              </View>
-            </View>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher une ville ou un lieu..."
+              placeholderTextColor="#9ca3af"
+              value={searchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                if (text.length > 2) {
+                  searchAddressSuggestions(text);
+                } else {
+                  setAddressSuggestions([]);
+                  setShowSuggestions(false);
+                }
+              }}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+              onFocus={() => {
+                if (addressSuggestions.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                <Ionicons name="close-circle" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            )}
+            
+            {/* Indicateur de distance intégré */}
             {userLocation && (
-              <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="navigate" size={16} color="#45b7d1" />
-                </View>
-                <View style={styles.statContent}>
-                  <Text style={styles.statNumber}>{filters.maxDistance}</Text>
-                  <Text style={styles.statLabel}>km max</Text>
-                </View>
-              </View>
+              <TouchableOpacity 
+                style={styles.distanceButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Distance maximale',
+                    `Distance actuelle : ${filters.maxDistance === -1 ? 'Pas de limite' : filters.maxDistance + ' km'}`,
+                    [
+                      { text: '1 km', onPress: () => setFilters(prev => ({ ...prev, maxDistance: 1 })) },
+                      { text: '3 km', onPress: () => setFilters(prev => ({ ...prev, maxDistance: 3 })) },
+                      { text: '5 km', onPress: () => setFilters(prev => ({ ...prev, maxDistance: 5 })) },
+                      { text: '10 km', onPress: () => setFilters(prev => ({ ...prev, maxDistance: 10 })) },
+                      { text: '20 km', onPress: () => setFilters(prev => ({ ...prev, maxDistance: 20 })) },
+                      { text: 'Pas de limite', onPress: () => setFilters(prev => ({ ...prev, maxDistance: -1 })) },
+                      { text: 'Annuler', style: 'cancel' }
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="navigate" size={16} color="#45b7d1" />
+                <Text style={styles.distanceButtonText}>
+                  {filters.maxDistance === -1 ? '∞' : `${filters.maxDistance}km`}
+                </Text>
+              </TouchableOpacity>
             )}
+          </View>
+          
+          {/* Suggestions d'adresses */}
+          {showSuggestions && addressSuggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {addressSuggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.suggestionItem}
+                  onPress={() => selectAddressSuggestion(suggestion)}
+                >
+                  <Ionicons name="location" size={16} color="#4ecdc4" />
+                  <Text style={styles.suggestionText}>{suggestion.address}</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Section filtres (inchangée) */}
+        <View style={styles.filtersSection}>
+          <View style={styles.filtersHeader}>
+            <Text style={styles.filtersTitle}>
+              Filtres {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+            </Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filtersRow}
+            ref={chipsRef}
+          >
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.isGoodForDate === true && { backgroundColor: '#ff6b6b', borderColor: '#ff6b6b', shadowColor: '#ff6b6b' }
+              ]}
+              onPress={() => toggleFilter('isGoodForDate')}
+            >
+              <Ionicons name="heart" size={14} color={filters.isGoodForDate === true ? '#fff' : '#ff6b6b'} />
+              <Text style={[styles.miniFilterChipText, filters.isGoodForDate === true && styles.miniFilterChipTextActive]}>Date</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.hasShade === true && { backgroundColor: '#4ecdc4', borderColor: '#4ecdc4', shadowColor: '#4ecdc4' }
+              ]}
+              onPress={() => toggleFilter('hasShade')}
+            >
+              <Ionicons name="umbrella" size={14} color={filters.hasShade === true ? '#fff' : '#4ecdc4'} />
+              <Text style={[styles.miniFilterChipText, filters.hasShade === true && styles.miniFilterChipTextActive]}>Ombre</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.hasFlowers === true && { backgroundColor: '#45b7d1', borderColor: '#45b7d1', shadowColor: '#45b7d1' }
+              ]}
+              onPress={() => toggleFilter('hasFlowers')}
+            >
+              <Ionicons name="flower" size={14} color={filters.hasFlowers === true ? '#fff' : '#45b7d1'} />
+              <Text style={[styles.miniFilterChipText, filters.hasFlowers === true && styles.miniFilterChipTextActive]}>Fleurs</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.hasView === true && { backgroundColor: '#96ceb4', borderColor: '#96ceb4', shadowColor: '#96ceb4' }
+              ]}
+              onPress={() => toggleFilter('hasView')}
+            >
+              <Ionicons name="eye" size={14} color={filters.hasView === true ? '#fff' : '#96ceb4'} />
+              <Text style={[styles.miniFilterChipText, filters.hasView === true && styles.miniFilterChipTextActive]}>Vue</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.hasParking === true && { backgroundColor: '#f39c12', borderColor: '#f39c12', shadowColor: '#f39c12' }
+              ]}
+              onPress={() => toggleFilter('hasParking')}
+            >
+              <Ionicons name="car" size={14} color={filters.hasParking === true ? '#fff' : '#f39c12'} />
+              <Text style={[styles.miniFilterChipText, filters.hasParking === true && styles.miniFilterChipTextActive]}>Parking</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.hasToilets === true && { backgroundColor: '#3498db', borderColor: '#3498db', shadowColor: '#3498db' }
+              ]}
+              onPress={() => toggleFilter('hasToilets')}
+            >
+              <Ionicons name="water" size={14} color={filters.hasToilets === true ? '#fff' : '#3498db'} />
+              <Text style={[styles.miniFilterChipText, filters.hasToilets === true && styles.miniFilterChipTextActive]}>WC</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.miniFilterChip, 
+                filters.isQuiet === true && { backgroundColor: '#9b59b6', borderColor: '#9b59b6', shadowColor: '#9b59b6' }
+              ]}
+              onPress={() => toggleFilter('isQuiet')}
+            >
+              <Ionicons name="volume-low" size={14} color={filters.isQuiet === true ? '#fff' : '#9b59b6'} />
+              <Text style={[styles.miniFilterChipText, filters.isQuiet === true && styles.miniFilterChipTextActive]}>Calme</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.miniFilterChip}
+              onPress={() => {
+                Alert.alert(
+                  'Distance maximale',
+                  `Distance actuelle : ${filters.maxDistance} km`,
+                  [
+                    { text: '1 km', onPress: () => {
+                      console.log('🖱️ Changement distance: 1km');
+                      setFilters(prev => ({ ...prev, maxDistance: 1 }));
+                    }},
+                    { text: '3 km', onPress: () => {
+                      console.log('🖱️ Changement distance: 3km');
+                      setFilters(prev => ({ ...prev, maxDistance: 3 }));
+                    }},
+                    { text: '5 km', onPress: () => {
+                      console.log('🖱️ Changement distance: 5km');
+                      setFilters(prev => ({ ...prev, maxDistance: 5 }));
+                    }},
+                    { text: '10 km', onPress: () => {
+                      console.log('🖱️ Changement distance: 10km');
+                      setFilters(prev => ({ ...prev, maxDistance: 10 }));
+                    }},
+                    { text: 'Annuler', style: 'cancel' }
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="navigate" size={14} color="#1a1a2e" />
+              <Text style={styles.miniFilterChipText}>{filters.maxDistance}km</Text>
+            </TouchableOpacity>
           </ScrollView>
-
-          {/* Bouton filtres */}
-          <TouchableOpacity
-            style={[styles.filterButton, activeFiltersCount > 0 && styles.filterButtonActive]}
-            onPress={focusFilters}
-          >
-            <Ionicons name="filter" size={16} color={activeFiltersCount > 0 ? "#fff" : "#1a1a2e"} />
-            {activeFiltersCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
         </View>
-        {/* Rangée compacte de filtres (toujours visible) */}
-        <View style={styles.filtersHeader}>
-          <Text style={styles.filtersTitle}>
-            Filtres {activeFiltersCount > 0 && `(${activeFiltersCount})`}
-          </Text>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.compactChipsRow}
-          ref={chipsRef}
-        >
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.isGoodForDate === true && { backgroundColor: '#ff6b6b', borderColor: '#ff6b6b', shadowColor: '#ff6b6b' }
-            ]}
-            onPress={() => toggleFilter('isGoodForDate')}
-          >
-            <Ionicons name="heart" size={14} color={filters.isGoodForDate === true ? '#fff' : '#ff6b6b'} />
-            <Text style={[styles.miniFilterChipText, filters.isGoodForDate === true && styles.miniFilterChipTextActive]}>Date</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.hasShade === true && { backgroundColor: '#4ecdc4', borderColor: '#4ecdc4', shadowColor: '#4ecdc4' }
-            ]}
-            onPress={() => toggleFilter('hasShade')}
-          >
-            <Ionicons name="umbrella" size={14} color={filters.hasShade === true ? '#fff' : '#4ecdc4'} />
-            <Text style={[styles.miniFilterChipText, filters.hasShade === true && styles.miniFilterChipTextActive]}>Ombre</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.hasFlowers === true && { backgroundColor: '#45b7d1', borderColor: '#45b7d1', shadowColor: '#45b7d1' }
-            ]}
-            onPress={() => toggleFilter('hasFlowers')}
-          >
-            <Ionicons name="flower" size={14} color={filters.hasFlowers === true ? '#fff' : '#45b7d1'} />
-            <Text style={[styles.miniFilterChipText, filters.hasFlowers === true && styles.miniFilterChipTextActive]}>Fleurs</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.hasView === true && { backgroundColor: '#96ceb4', borderColor: '#96ceb4', shadowColor: '#96ceb4' }
-            ]}
-            onPress={() => toggleFilter('hasView')}
-          >
-            <Ionicons name="eye" size={14} color={filters.hasView === true ? '#fff' : '#96ceb4'} />
-            <Text style={[styles.miniFilterChipText, filters.hasView === true && styles.miniFilterChipTextActive]}>Vue</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.hasParking === true && { backgroundColor: '#f39c12', borderColor: '#f39c12', shadowColor: '#f39c12' }
-            ]}
-            onPress={() => toggleFilter('hasParking')}
-          >
-            <Ionicons name="car" size={14} color={filters.hasParking === true ? '#fff' : '#f39c12'} />
-            <Text style={[styles.miniFilterChipText, filters.hasParking === true && styles.miniFilterChipTextActive]}>Parking</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.hasToilets === true && { backgroundColor: '#3498db', borderColor: '#3498db', shadowColor: '#3498db' }
-            ]}
-            onPress={() => toggleFilter('hasToilets')}
-          >
-            <Ionicons name="water" size={14} color={filters.hasToilets === true ? '#fff' : '#3498db'} />
-            <Text style={[styles.miniFilterChipText, filters.hasToilets === true && styles.miniFilterChipTextActive]}>WC</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.miniFilterChip, 
-              filters.isQuiet === true && { backgroundColor: '#9b59b6', borderColor: '#9b59b6', shadowColor: '#9b59b6' }
-            ]}
-            onPress={() => toggleFilter('isQuiet')}
-          >
-            <Ionicons name="volume-low" size={14} color={filters.isQuiet === true ? '#fff' : '#9b59b6'} />
-            <Text style={[styles.miniFilterChipText, filters.isQuiet === true && styles.miniFilterChipTextActive]}>Calme</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.miniFilterChip}
-            onPress={() => {
-              Alert.alert(
-                'Distance maximale',
-                `Distance actuelle : ${filters.maxDistance} km`,
-                [
-                  { text: '1 km', onPress: () => {
-                    console.log('🖱️ Changement distance: 1km');
-                    setFilters(prev => ({ ...prev, maxDistance: 1 }));
-                  }},
-                  { text: '3 km', onPress: () => {
-                    console.log('🖱️ Changement distance: 3km');
-                    setFilters(prev => ({ ...prev, maxDistance: 3 }));
-                  }},
-                  { text: '5 km', onPress: () => {
-                    console.log('🖱️ Changement distance: 5km');
-                    setFilters(prev => ({ ...prev, maxDistance: 5 }));
-                  }},
-                  { text: '10 km', onPress: () => {
-                    console.log('🖱️ Changement distance: 10km');
-                    setFilters(prev => ({ ...prev, maxDistance: 10 }));
-                  }},
-                  { text: 'Annuler', style: 'cancel' }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="navigate" size={14} color="#1a1a2e" />
-            <Text style={styles.miniFilterChipText}>{filters.maxDistance}km</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
+      </View>
 
 
       {/* Bouton d'ajout flottant */}
@@ -898,7 +1177,7 @@ export default function MapScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -913,6 +1192,61 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  statsScrollContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  statCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f3f4',
+    minWidth: 140,
+  },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  statTextContainer: {
+    flex: 1,
+  },
+  filtersSection: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  filtersRow: {
+    paddingVertical: spacing.sm,
+  },
   topOverlay: {
     position: 'absolute',
     top: 0,
@@ -920,44 +1254,7 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
   },
-  topContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  statsContainer: {
-    paddingRight: spacing.lg,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: spacing.lg,
-    backgroundColor: '#fff',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#eef1f4',
-  },
-  statIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#f0fffc',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statContent: {
-    flex: 1,
-  },
+
   statNumber: {
     fontSize: 16,
     fontWeight: '800',
@@ -967,6 +1264,84 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748b',
     fontWeight: '600',
+  },
+  searchContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#f1f3f4',
+  },
+  searchIconContainer: {
+    marginRight: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1a1a2e',
+    paddingVertical: spacing.xs,
+  },
+  clearButton: {
+    marginLeft: spacing.sm,
+    padding: spacing.xs,
+  },
+  distanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.lg,
+    marginLeft: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minWidth: 50,
+    justifyContent: 'center',
+  },
+  distanceButtonText: {
+    fontSize: 12,
+    color: '#45b7d1',
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
+  suggestionsContainer: {
+    backgroundColor: '#fff',
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#f1f3f4',
+    maxHeight: 200,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1a1a2e',
+    marginLeft: spacing.sm,
   },
   filterButton: {
     width: 44,
@@ -1015,20 +1390,6 @@ const styles = StyleSheet.create({
     zIndex: 20,
     paddingTop: isIOS ? 48 : (StatusBar.currentHeight || 0) + 12,
     maxHeight: 160,
-  },
-  filtersHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  filtersTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
   },
   filtersScroll: {
     paddingHorizontal: spacing.lg,

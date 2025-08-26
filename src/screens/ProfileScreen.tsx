@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert, ScrollView, SafeAreaView, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../context/UserContext';
 import { colors, spacing, borderRadius, typography } from '../theme';
@@ -77,134 +77,144 @@ export default function ProfileScreen() {
   );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Profile Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profil</Text>
-        
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={32} color={colors.surface} />
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Profile Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Profil</Text>
           
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileTitle}>Utilisateur</Text>
-            <Text style={styles.profileSubtitle}>ID: {user?.id?.slice(0, 8)}...</Text>
+          <View style={styles.profileCard}>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={32} color={colors.surface} />
+            </View>
+            
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileTitle}>Utilisateur</Text>
+              <Text style={styles.profileSubtitle}>ID: {user?.id?.slice(0, 8)}...</Text>
+            </View>
+          </View>
+
+          <View style={styles.nicknameForm}>
+            <Input
+              label="Pseudo"
+              placeholder="Votre pseudo"
+              value={nickname}
+              onChangeText={setNicknameLocal}
+            />
+            <Button
+              title="Sauvegarder"
+              onPress={handleSaveNickname}
+              loading={loading}
+              disabled={!nickname.trim() || nickname === user?.nickname}
+            />
           </View>
         </View>
 
-        <View style={styles.nicknameForm}>
-          <Input
-            label="Pseudo"
-            placeholder="Votre pseudo"
-            value={nickname}
-            onChangeText={setNicknameLocal}
-          />
-          <Button
-            title="Sauvegarder"
-            onPress={handleSaveNickname}
-            loading={loading}
-            disabled={!nickname.trim() || nickname === user?.nickname}
-          />
+        {/* Notifications Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          
+          {renderSettingItem(
+            'notifications',
+            'Notifications push',
+            'Recevoir des notifications pour les nouvelles activités',
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={handleNotificationsToggle}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          )}
+
+          {renderSettingItem(
+            'time',
+            'Rappel quotidien',
+            'Recevoir un rappel pour découvrir de nouveaux lieux',
+            <Switch
+              value={reminderEnabled}
+              onValueChange={handleReminderToggle}
+              disabled={!notificationsEnabled}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          )}
         </View>
-      </View>
 
-      {/* Notifications Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        
-        {renderSettingItem(
-          'notifications',
-          'Notifications push',
-          'Recevoir des notifications pour les nouvelles activités',
-          <Switch
-            value={notificationsEnabled}
-            onValueChange={handleNotificationsToggle}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor={colors.surface}
-          />
-        )}
-
-        {renderSettingItem(
-          'time',
-          'Rappel quotidien',
-          'Recevoir un rappel pour découvrir de nouveaux lieux',
-          <Switch
-            value={reminderEnabled}
-            onValueChange={handleReminderToggle}
-            disabled={!notificationsEnabled}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor={colors.surface}
-          />
-        )}
-      </View>
-
-      {/* App Info Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>À propos</Text>
-        
-        {renderSettingItem(
-          'information-circle',
-          'Version',
-          '1.0.0',
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        )}
-
-        {renderSettingItem(
-          'help-circle',
-          'Aide',
-          'Comment utiliser l\'application',
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        )}
-
-        {renderSettingItem(
-          'document-text',
-          'Conditions d\'utilisation',
-          'Lire les conditions',
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        )}
-
-        {renderSettingItem(
-          'shield-checkmark',
-          'Politique de confidentialité',
-          'Comment nous protégeons vos données',
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        )}
-      </View>
-
-      {/* Stats Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Statistiques</Text>
-        
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Lieux ajoutés</Text>
-          </View>
+        {/* Stats Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Statistiques</Text>
           
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Avis donnés</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>0</Text>
-            <Text style={styles.statLabel}>Questions posées</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Ionicons name="location" size={24} color={colors.primary} />
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Lieux ajoutés</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Ionicons name="star" size={24} color={colors.secondary} />
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Avis donnés</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Ionicons name="chatbubble" size={24} color={colors.warning} />
+              <Text style={styles.statNumber}>0</Text>
+              <Text style={styles.statLabel}>Questions posées</Text>
+            </View>
           </View>
         </View>
-      </View>
+
+        {/* App Info Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>À propos</Text>
+          
+          {renderSettingItem(
+            'information-circle',
+            'Version',
+            '1.0.0',
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          )}
+
+          {renderSettingItem(
+            'help-circle',
+            'Aide',
+            'Comment utiliser l\'application',
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          )}
+
+          {renderSettingItem(
+            'document-text',
+            'Conditions d\'utilisation',
+            'Lire les conditions',
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          )}
+
+          {renderSettingItem(
+            'shield-checkmark',
+            'Politique de confidentialité',
+            'Comment nous protégeons vos données',
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
   content: {
     padding: spacing.md,
+    paddingTop: spacing.lg,
   },
   section: {
     marginBottom: spacing.xl,
@@ -315,6 +325,7 @@ const styles = StyleSheet.create({
   statNumber: {
     ...typography.h1,
     color: colors.primary,
+    marginTop: spacing.xs,
     marginBottom: spacing.xs,
   },
   statLabel: {

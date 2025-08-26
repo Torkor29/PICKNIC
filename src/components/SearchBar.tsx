@@ -160,6 +160,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    paddingTop: spacing.lg, // Plus d'espace pour éviter le débordement avec les notifications
   },
   searchContainer: {
     flex: 1,
