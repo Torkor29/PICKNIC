@@ -243,16 +243,19 @@ export async function updatePlace(placeId: string, updates: Partial<Place>): Pro
     .from('places')
     .update(updates)
     .eq('id', placeId)
-    .select()
-    .single();
+    .select('*');
 
   if (error) {
     console.error('❌ Erreur Supabase lors de la mise à jour:', error);
     throw new Error(`Impossible de mettre à jour le lieu: ${error.message}`);
   }
+
+  if (!data || data.length === 0) {
+    throw new Error(`Aucune donnée retournée lors de la mise à jour du lieu: ${placeId}`);
+  }
   
-  console.log('✅ Lieu mis à jour dans Supabase:', data);
-  return data;
+  console.log('✅ Lieu mis à jour dans Supabase:', data[0]);
+  return data[0];
 }
 
 export async function deletePlace(placeId: string): Promise<void> {
