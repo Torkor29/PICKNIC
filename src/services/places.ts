@@ -228,22 +228,33 @@ export async function updatePlace(placeId: string, updates: Partial<Place>): Pro
   console.log('🌐 Mise à jour du lieu:', placeId);
   console.log('📝 Données à mettre à jour:', updates);
   
-  // Mettre à jour le lieu directement sans vérification préalable
-  const { data, error } = await supabase
+  // D'abord faire l'update sans select
+  const { error: updateError } = await supabase
     .from('places')
     .update({
       ...updates,
       updated_at: new Date().toISOString()
     })
-    .eq('id', placeId)
-    .select('*');
+    .eq('id', placeId);
 
-  if (error) {
-    console.error('❌ Erreur Supabase lors de la mise à jour:', error);
-    throw new Error(`Impossible de mettre à jour le lieu: ${error.message}`);
+  if (updateError) {
+    console.error('❌ Erreur lors de l\'update:', updateError);
+    throw new Error(`Impossible de mettre à jour le lieu: ${updateError.message}`);
   }
 
-  if (!data || data.length === 0) {
+  // Puis récupérer les données mises à jour
+  const { data, error: selectError } = await supabase
+    .from('places')
+    .select('*')
+    .eq('id', placeId)
+    .single();
+
+  if (selectError) {
+    console.error('❌ Erreur Supabase lors de la récupération:', selectError);
+    throw new Error(`Impossible de récupérer le lieu mis à jour: ${selectError.message}`);
+  }
+
+  if (!data) {
     console.error('❌ Aucune donnée retournée pour le lieu:', placeId);
     console.error('📊 Données envoyées:', updates);
     
