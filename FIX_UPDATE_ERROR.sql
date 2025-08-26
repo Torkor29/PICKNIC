@@ -72,7 +72,7 @@ CREATE TRIGGER update_places_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- 5. Tester la mise à jour d'un lieu
-SELECT 'Test de mise à jour d\'un lieu:' as info;
+SELECT 'Test de mise à jour d''un lieu:' as info;
 SELECT 
   id,
   title,
