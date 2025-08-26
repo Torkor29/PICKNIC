@@ -1,236 +1,466 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Image,
+  Switch,
+  SafeAreaView,
+  StatusBar,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
-import { getPlaceById, updatePlace } from '../services/places';
-import { uploadPhoto, listPhotos } from '../services/photos';
-import { addPlaceComment } from '../services/comments';
+import { updatePlace, deletePlace } from '../services/places';
+import { uploadPhoto, deletePhoto, listPhotos } from '../services/photos';
 import { useUser } from '../context/UserContext';
-import type { Place, Photo } from '../types';
 import { colors, spacing, borderRadius, typography } from '../theme';
-import Input from '../components/Input';
-import Button from '../components/Button';
-import PhotoPicker from '../components/PhotoPicker';
+import type { Place, Photo } from '../types';
 
-type EditPlaceRouteProp = RouteProp<RootStackParamList, 'EditPlace'>;
+type Navigation = NativeStackNavigationProp<RootStackParamList, 'EditPlace'>;
+type Route = RouteProp<RootStackParamList, 'EditPlace'>;
 
 export default function EditPlaceScreen() {
-  const route = useRoute<EditPlaceRouteProp>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<Navigation>();
+  const route = useRoute<Route>();
   const { user } = useUser();
-  const { placeId } = route.params;
+  const { placeId, place: initialPlace } = route.params;
 
-  const [place, setPlace] = useState<Place | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [place, setPlace] = useState<Place>(initialPlace);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploadingPhotos, setUploadingPhotos] = useState(false);
-  
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [viewType, setViewType] = useState('');
-  const [isGoodForDate, setIsGoodForDate] = useState(false);
-  const [newComment, setNewComment] = useState('');
-  const [newImages, setNewImages] = useState<string[]>([]);
-  const [existingPhotos, setExistingPhotos] = useState<Photo[]>([]);
 
   useEffect(() => {
-    loadPlaceData();
-  }, [placeId]);
+    loadPhotos();
+  }, []);
 
-  const loadPlaceData = async () => {
+  const loadPhotos = async () => {
     try {
-      const placeData = await getPlaceById(placeId);
-      setPlace(placeData);
-      setTitle(placeData.title);
-      setDescription(placeData.description || '');
-      setViewType(placeData.view_type || '');
-      setIsGoodForDate(placeData.is_good_for_date || false);
-
-      // Charger les photos existantes
-      const photos = await listPhotos(placeId);
-      setExistingPhotos(photos);
+      const placePhotos = await listPhotos(placeId);
+      setPhotos(placePhotos);
     } catch (error) {
-      console.error('Failed to load place data:', error);
-      Alert.alert('Erreur', 'Impossible de charger les détails du lieu');
-    } finally {
-      setLoading(false);
+      console.error('Erreur lors du chargement des photos:', error);
     }
   };
 
   const handleSave = async () => {
-    if (!title.trim()) {
+    if (!place.title.trim()) {
       Alert.alert('Erreur', 'Le titre est obligatoire');
       return;
     }
 
-    setSaving(true);
     try {
-      const updatedPlace = await updatePlace(placeId, {
-        title: title.trim(),
-        description: description.trim(),
-        view_type: viewType.trim(),
-        is_good_for_date: isGoodForDate,
+      setSaving(true);
+      await updatePlace(placeId, {
+        title: place.title.trim(),
+        description: place.description?.trim() || '',
+        view_type: place.view_type?.trim() || '',
+        is_good_for_date: place.is_good_for_date || false,
+        has_shade: place.has_shade || false,
+        has_flowers: place.has_flowers || false,
+        has_water: place.has_water || false,
+        has_parking: place.has_parking || false,
+        has_toilets: place.has_toilets || false,
+        is_quiet: place.is_quiet || false,
       });
 
-      // Upload des nouvelles photos
-      if (newImages.length > 0) {
-        setUploadingPhotos(true);
-        for (const imageUri of newImages) {
-          await uploadPhoto(placeId, imageUri);
-        }
-        setUploadingPhotos(false);
-        setNewImages([]);
-      }
-
-      Alert.alert('Succès', 'Lieu mis à jour avec succès !');
-      navigation.goBack();
+      Alert.alert('Succès', 'Lieu mis à jour avec succès', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (error) {
+      console.error('Erreur lors de la mise à jour:', error);
       Alert.alert('Erreur', 'Impossible de mettre à jour le lieu');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleAddComment = async () => {
-    if (!newComment.trim()) {
-      Alert.alert('Erreur', 'Veuillez saisir un commentaire');
-      return;
-    }
+  const handleDelete = () => {
+    Alert.alert(
+      'Supprimer le lieu',
+      'Êtes-vous sûr de vouloir supprimer ce lieu ? Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await deletePlace(placeId);
+              Alert.alert('Succès', 'Lieu supprimé avec succès', [
+                { text: 'OK', onPress: () => navigation.navigate('Main' as any, { screen: 'MyPlaces' } as any) }
+              ]);
+            } catch (error) {
+              console.error('Erreur lors de la suppression:', error);
+              Alert.alert('Erreur', 'Impossible de supprimer le lieu');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
+  const pickImage = async () => {
     try {
-      await addPlaceComment(placeId, newComment.trim());
-      Alert.alert('Succès', 'Commentaire ajouté !');
-      setNewComment('');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setLoading(true);
+        
+        try {
+          const photoUrl = await uploadPhoto(placeId, asset.uri);
+          await loadPhotos(); // Recharger les photos
+          Alert.alert('Succès', 'Photo ajoutée avec succès');
+        } catch (error) {
+          console.error('Erreur lors de l\'upload:', error);
+          Alert.alert('Erreur', 'Impossible d\'ajouter la photo');
+        } finally {
+          setLoading(false);
+        }
+      }
     } catch (error) {
-      Alert.alert('Erreur', 'Impossible d\'ajouter le commentaire');
+      console.error('Erreur lors de la sélection d\'image:', error);
+      Alert.alert('Erreur', 'Impossible de sélectionner l\'image');
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+  const handleDeletePhoto = async (photoId: string) => {
+    Alert.alert(
+      'Supprimer la photo',
+      'Êtes-vous sûr de vouloir supprimer cette photo ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePhoto(photoId);
+              await loadPhotos(); // Recharger les photos
+              Alert.alert('Succès', 'Photo supprimée avec succès');
+            } catch (error) {
+              console.error('Erreur lors de la suppression de la photo:', error);
+              Alert.alert('Erreur', 'Impossible de supprimer la photo');
+            }
+          }
+        }
+      ]
     );
-  }
+  };
 
-  if (!place) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>Lieu non trouvé</Text>
+  const renderFeatureToggle = (key: keyof Place, label: string, icon: string) => (
+    <View style={styles.featureToggle}>
+      <View style={styles.featureInfo}>
+        <Ionicons name={icon as any} size={20} color={colors.text} />
+        <Text style={styles.featureLabel}>{label}</Text>
       </View>
-    );
-  }
+      <Switch
+        value={place[key] as boolean}
+        onValueChange={(value) => setPlace({ ...place, [key]: value })}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.surface}
+      />
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Modifier le lieu</Text>
-        <Text style={styles.subtitle}>{place.title}</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Informations générales</Text>
-        
-        <Input 
-          label="Titre *" 
-          placeholder="Nom du lieu" 
-          value={title} 
-          onChangeText={setTitle} 
-        />
-        
-        <Input 
-          label="Description" 
-          placeholder="Description du lieu..." 
-          value={description} 
-          onChangeText={setDescription} 
-          multiline 
-          numberOfLines={3}
-        />
-        
-        <Input 
-          label="Type de vue" 
-          placeholder="Parc, rivière, montagne, mer..." 
-          value={viewType} 
-          onChangeText={setViewType} 
-        />
-
-        {/* Option "Bon pour un date" */}
-        <View style={styles.dateOptionContainer}>
-          <Text style={styles.dateOptionLabel}>Bon pour un date ?</Text>
-          <Button
-            title={isGoodForDate ? "OUI" : "NON"}
-            onPress={() => setIsGoodForDate(!isGoodForDate)}
-            variant={isGoodForDate ? "primary" : "outline"}
-            size="small"
-            icon={isGoodForDate ? "heart" : "heart-outline"}
-          />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Modifier le lieu</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            onPress={handleSave} 
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+            disabled={saving}
+          >
+            <Ionicons name="checkmark" size={24} color={colors.surface} />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Photos existantes</Text>
-        {existingPhotos.length > 0 ? (
-          <Text style={styles.photoCount}>{existingPhotos.length} photo(s) existante(s)</Text>
-        ) : (
-          <Text style={styles.noPhotos}>Aucune photo pour ce lieu</Text>
-        )}
-      </View>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Informations principales */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Informations générales</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Titre *</Text>
+            <TextInput
+              style={styles.input}
+              value={place.title}
+              onChangeText={(text) => setPlace({ ...place, title: text })}
+              placeholder="Nom du lieu"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Ajouter des photos</Text>
-        <PhotoPicker 
-          images={newImages} 
-          onImagesChange={setNewImages} 
-          maxImages={5} 
-        />
-      </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={place.description || ''}
+              onChangeText={(text) => setPlace({ ...place, description: text })}
+              placeholder="Description du lieu..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              numberOfLines={4}
+            />
+          </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Ajouter un commentaire</Text>
-        <Input 
-          placeholder="Votre commentaire ou précision..." 
-          value={newComment} 
-          onChangeText={setNewComment} 
-          multiline 
-          numberOfLines={3}
-        />
-        <Button 
-          title="Ajouter le commentaire" 
-          onPress={handleAddComment} 
-          disabled={!newComment.trim()}
-          size="small"
-          style={styles.commentButton}
-        />
-      </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Type de vue</Text>
+            <TextInput
+              style={styles.input}
+              value={place.view_type || ''}
+              onChangeText={(text) => setPlace({ ...place, view_type: text })}
+              placeholder="Parc, rivière, montagne..."
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+        </View>
 
-      <View style={styles.buttonContainer}>
-        <Button 
-          title="Sauvegarder les modifications" 
-          onPress={handleSave} 
-          loading={saving || uploadingPhotos}
-          disabled={saving || uploadingPhotos}
-        />
-      </View>
-    </ScrollView>
+        {/* Caractéristiques */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Caractéristiques</Text>
+          
+          {renderFeatureToggle('is_good_for_date', 'Idéal pour un rendez-vous', 'heart')}
+          {renderFeatureToggle('has_shade', 'Avec ombre', 'umbrella')}
+          {renderFeatureToggle('has_flowers', 'Avec fleurs', 'flower')}
+          {renderFeatureToggle('has_water', 'Près de l\'eau', 'water')}
+          {renderFeatureToggle('has_parking', 'Parking disponible', 'car')}
+          {renderFeatureToggle('has_toilets', 'Toilettes disponibles', 'restroom')}
+          {renderFeatureToggle('is_quiet', 'Endroit calme', 'volume-low')}
+        </View>
+
+        {/* Photos */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Photos</Text>
+            <TouchableOpacity onPress={pickImage} style={styles.addPhotoButton}>
+              <Ionicons name="add" size={20} color={colors.primary} />
+              <Text style={styles.addPhotoText}>Ajouter</Text>
+            </TouchableOpacity>
+          </View>
+
+          {photos.length > 0 ? (
+            <View style={styles.photosGrid}>
+              {photos.map((photo, index) => (
+                <View key={photo.id} style={styles.photoContainer}>
+                  <Image source={{ uri: photo.url }} style={styles.photo} />
+                  <TouchableOpacity
+                    style={styles.deletePhotoButton}
+                    onPress={() => handleDeletePhoto(photo.id)}
+                  >
+                    <Ionicons name="close-circle" size={24} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.noPhotos}>
+              <Ionicons name="images-outline" size={48} color={colors.textSecondary} />
+              <Text style={styles.noPhotosText}>Aucune photo</Text>
+              <Text style={styles.noPhotosSubtext}>Ajoutez des photos pour illustrer votre lieu</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Actions */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.deleteButton} 
+            onPress={handleDelete}
+            disabled={loading}
+          >
+            <Ionicons name="trash" size={20} color={colors.surface} />
+            <Text style={styles.deleteButtonText}>Supprimer le lieu</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  errorText: { ...typography.h2, color: colors.error },
-  header: { backgroundColor: colors.surface, padding: spacing.lg, marginBottom: spacing.md },
-  title: { ...typography.h1, color: colors.text, marginBottom: spacing.xs },
-  subtitle: { ...typography.body, color: colors.textSecondary },
-  section: { backgroundColor: colors.surface, marginBottom: spacing.md, padding: spacing.lg },
-  sectionTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.lg },
-  dateOptionContainer: { marginTop: spacing.md },
-  dateOptionLabel: { ...typography.caption, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
-  photoCount: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
-  noPhotos: { ...typography.body, color: colors.textSecondary, textAlign: 'center', fontStyle: 'italic' },
-  commentButton: { marginTop: spacing.sm },
-  buttonContainer: { padding: spacing.lg },
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: {
+    padding: spacing.sm,
+  },
+  headerTitle: {
+    ...typography.h2,
+    color: colors.text,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  saveButton: {
+    backgroundColor: colors.primary,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+  },
+  container: {
+    flex: 1,
+  },
+  section: {
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  inputGroup: {
+    marginBottom: spacing.lg,
+  },
+  inputLabel: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    ...typography.body,
+    color: colors.text,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  featureToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  featureInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  featureLabel: {
+    ...typography.body,
+    color: colors.text,
+    marginLeft: spacing.md,
+  },
+  addPhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  addPhotoText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  photoContainer: {
+    position: 'relative',
+    width: '48%',
+    aspectRatio: 1,
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: borderRadius.md,
+  },
+  deletePhotoButton: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+  },
+  noPhotos: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  noPhotosText: {
+    ...typography.h4,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  noPhotosSubtext: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.error,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.lg,
+  },
+  deleteButtonText: {
+    ...typography.button,
+    color: colors.surface,
+    marginLeft: spacing.sm,
+  },
 });

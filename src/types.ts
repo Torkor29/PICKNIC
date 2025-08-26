@@ -8,6 +8,7 @@ export type Place = {
   is_good_for_date?: boolean;
   has_shade?: boolean;
   has_flowers?: boolean;
+  has_water?: boolean;
   has_parking?: boolean;
   has_toilets?: boolean;
   is_quiet?: boolean;

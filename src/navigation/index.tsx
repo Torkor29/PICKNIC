@@ -11,7 +11,7 @@ export type RootStackParamList = {
   Main: undefined;
   PlaceForm: { latitude: number; longitude: number } | undefined;
   PlaceDetail: { placeId: string; place?: Place };
-  EditPlace: { placeId: string };
+  EditPlace: { placeId: string; place: Place };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

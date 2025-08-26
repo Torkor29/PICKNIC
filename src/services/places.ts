@@ -255,4 +255,45 @@ export async function updatePlace(placeId: string, updates: Partial<Place>): Pro
   return data;
 }
 
+export async function deletePlace(placeId: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase non configuré - Simulation de suppression');
+    console.log('🗑️ Lieu supprimé (mode dev):', placeId);
+    return;
+  }
+
+  console.log('🌐 Suppression du lieu:', placeId);
+  
+  // D'abord vérifier si le lieu existe
+  const { data: existingPlace, error: checkError } = await supabase
+    .from('places')
+    .select('*')
+    .eq('id', placeId)
+    .single();
+
+  if (checkError) {
+    console.error('❌ Erreur lors de la vérification du lieu:', checkError);
+    throw new Error(`Lieu non trouvé avec l'ID: ${placeId}`);
+  }
+
+  if (!existingPlace) {
+    throw new Error(`Lieu non trouvé avec l'ID: ${placeId}`);
+  }
+
+  console.log('✅ Lieu trouvé, suppression en cours...');
+  
+  // Supprimer le lieu
+  const { error } = await supabase
+    .from('places')
+    .delete()
+    .eq('id', placeId);
+
+  if (error) {
+    console.error('❌ Erreur Supabase lors de la suppression:', error);
+    throw new Error(`Impossible de supprimer le lieu: ${error.message}`);
+  }
+  
+  console.log('✅ Lieu supprimé de Supabase:', placeId);
+}
+
 

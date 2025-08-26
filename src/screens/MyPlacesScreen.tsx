@@ -79,6 +79,10 @@ export default function MyPlacesScreen() {
     }
   };
 
+  const handleEditPlace = (place: Place) => {
+    navigation.navigate('EditPlace', { placeId: place.id, place });
+  };
+
   const renderPlaceItem = ({ item, index }: { item: PlaceWithQuestions; index: number }) => {
     return (
       <Animated.View style={[styles.placeCard, { transform: [{ scale: 1 }] }]}>
@@ -120,6 +124,12 @@ export default function MyPlacesScreen() {
               onPress={() => handlePlacePress(item)}
             >
               <Ionicons name="eye" size={20} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={() => handleEditPlace(item)}
+            >
+              <Ionicons name="create" size={20} color={colors.secondary} />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -350,6 +360,7 @@ const styles = StyleSheet.create({
   placeActions: {
     justifyContent: 'center',
     paddingLeft: spacing.sm,
+    gap: spacing.xs,
   },
   actionButton: {
     width: 40,
@@ -358,6 +369,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   questionsAlert: {
     flexDirection: 'row',
