@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation';
-import { updatePlace, deletePlace } from '../services/places';
+import { updatePlace, deletePlace, getPlaceById } from '../services/places';
 import { uploadPhoto, deletePhoto, listPhotos } from '../services/photos';
 import { useUser } from '../context/UserContext';
 import { colors, spacing, borderRadius, typography } from '../theme';
@@ -39,8 +39,45 @@ export default function EditPlaceScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    loadPlaceData();
     loadPhotos();
   }, []);
+
+  const loadPlaceData = async () => {
+    try {
+      // Charger les données fraîches du lieu depuis la base
+      const freshPlace = await getPlaceById(placeId);
+      
+      // S'assurer que toutes les propriétés booléennes sont définies
+      const normalizedPlace: Place = {
+        ...freshPlace,
+        is_good_for_date: freshPlace.is_good_for_date ?? false,
+        has_shade: freshPlace.has_shade ?? false,
+        has_flowers: freshPlace.has_flowers ?? false,
+        has_water: freshPlace.has_water ?? false,
+        has_parking: freshPlace.has_parking ?? false,
+        has_toilets: freshPlace.has_toilets ?? false,
+        is_quiet: freshPlace.is_quiet ?? false,
+      };
+      
+      setPlace(normalizedPlace);
+      console.log('📝 Données du lieu chargées:', normalizedPlace);
+    } catch (error) {
+      console.error('Erreur lors du chargement des données du lieu:', error);
+      // En cas d'erreur, utiliser les données initiales avec des valeurs par défaut
+      const fallbackPlace: Place = {
+        ...initialPlace,
+        is_good_for_date: initialPlace.is_good_for_date ?? false,
+        has_shade: initialPlace.has_shade ?? false,
+        has_flowers: initialPlace.has_flowers ?? false,
+        has_water: initialPlace.has_water ?? false,
+        has_parking: initialPlace.has_parking ?? false,
+        has_toilets: initialPlace.has_toilets ?? false,
+        is_quiet: initialPlace.is_quiet ?? false,
+      };
+      setPlace(fallbackPlace);
+    }
+  };
 
   const loadPhotos = async () => {
     try {
@@ -165,20 +202,28 @@ export default function EditPlaceScreen() {
     );
   };
 
-  const renderFeatureToggle = (key: keyof Place, label: string, icon: string) => (
-    <View style={styles.featureToggle}>
-      <View style={styles.featureInfo}>
-        <Ionicons name={icon as any} size={20} color={colors.text} />
-        <Text style={styles.featureLabel}>{label}</Text>
+  const renderFeatureToggle = (key: keyof Place, label: string, icon: string) => {
+    const currentValue = place[key] as boolean;
+    console.log(`🔧 Toggle ${key}:`, currentValue);
+    
+    return (
+      <View style={styles.featureToggle}>
+        <View style={styles.featureInfo}>
+          <Ionicons name={icon as any} size={20} color={colors.text} />
+          <Text style={styles.featureLabel}>{label}</Text>
+        </View>
+        <Switch
+          value={currentValue}
+          onValueChange={(value) => {
+            console.log(`🔄 Changement ${key}: ${currentValue} → ${value}`);
+            setPlace({ ...place, [key]: value });
+          }}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor={colors.surface}
+        />
       </View>
-      <Switch
-        value={place[key] as boolean}
-        onValueChange={(value) => setPlace({ ...place, [key]: value })}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor={colors.surface}
-      />
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -244,7 +289,14 @@ export default function EditPlaceScreen() {
 
         {/* Caractéristiques */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Caractéristiques</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Caractéristiques</Text>
+            {loading && (
+              <View style={styles.loadingIndicator}>
+                <Text style={styles.loadingText}>Chargement...</Text>
+              </View>
+            )}
+          </View>
           
           {renderFeatureToggle('is_good_for_date', 'Idéal pour un rendez-vous', 'heart')}
           {renderFeatureToggle('has_shade', 'Avec ombre', 'umbrella')}
@@ -352,6 +404,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
+  },
+  loadingIndicator: {
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+  },
+  loadingText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontSize: 10,
   },
   sectionTitle: {
     ...typography.h3,
