@@ -268,7 +268,7 @@ export default function PlaceDetailScreen() {
             {renderFeature('umbrella', 'Ombre disponible', place.has_shade || false)}
             {renderFeature('flower', 'Fleurs', place.has_flowers || false)}
             {renderFeature('car', 'Parking', place.has_parking || false)}
-            {renderFeature('restroom', 'Toilettes', place.has_toilets || false)}
+            {renderFeature('medical', 'Toilettes', place.has_toilets || false)}
             {renderFeature('volume-low', 'Calme', place.is_quiet || false)}
           </View>
         </View>

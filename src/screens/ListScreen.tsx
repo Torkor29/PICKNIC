@@ -146,7 +146,7 @@ export default function ListScreen() {
               <View style={styles.placeFeatures}>
                 {item.has_shade && <Ionicons name="umbrella" size={12} color={colors.success} />}
                 {item.has_parking && <Ionicons name="car" size={12} color={colors.success} />}
-                {item.has_toilets && <Ionicons name="restroom" size={12} color={colors.success} />}
+                {item.has_toilets && <Ionicons name="medical" size={12} color={colors.success} />}
               </View>
             </View>
           </View>

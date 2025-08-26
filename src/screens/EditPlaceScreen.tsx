@@ -251,7 +251,7 @@ export default function EditPlaceScreen() {
           {renderFeatureToggle('has_flowers', 'Avec fleurs', 'flower')}
           {renderFeatureToggle('has_water', 'Près de l\'eau', 'water')}
           {renderFeatureToggle('has_parking', 'Parking disponible', 'car')}
-          {renderFeatureToggle('has_toilets', 'Toilettes disponibles', 'restroom')}
+          {renderFeatureToggle('has_toilets', 'Toilettes disponibles', 'medical')}
           {renderFeatureToggle('is_quiet', 'Endroit calme', 'volume-low')}
         </View>
 

@@ -213,35 +213,28 @@ export async function updatePlace(placeId: string, updates: Partial<Place>): Pro
       latitude: 45.7772,
       longitude: 4.8559,
       is_good_for_date: updates.is_good_for_date,
+      has_shade: updates.has_shade,
+      has_flowers: updates.has_flowers,
+      has_water: updates.has_water,
+      has_parking: updates.has_parking,
+      has_toilets: updates.has_toilets,
+      is_quiet: updates.is_quiet,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       user_id: 'dev-user',
     };
   }
 
-  console.log('🌐 Vérification de l\'existence du lieu:', placeId);
+  console.log('🌐 Mise à jour du lieu:', placeId);
+  console.log('📝 Données à mettre à jour:', updates);
   
-  // D'abord vérifier si le lieu existe
-  const { data: existingPlace, error: checkError } = await supabase
-    .from('places')
-    .select('*')
-    .eq('id', placeId)
-    .single();
-
-  if (checkError) {
-    console.error('❌ Erreur lors de la vérification du lieu:', checkError);
-    throw new Error(`Lieu non trouvé avec l'ID: ${placeId}`);
-  }
-
-  if (!existingPlace) {
-    throw new Error(`Lieu non trouvé avec l'ID: ${placeId}`);
-  }
-
-  console.log('✅ Lieu trouvé, mise à jour en cours...');
-  
-  // Maintenant mettre à jour le lieu
+  // Mettre à jour le lieu directement sans vérification préalable
   const { data, error } = await supabase
     .from('places')
-    .update(updates)
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
     .eq('id', placeId)
     .select('*');
 
@@ -251,6 +244,23 @@ export async function updatePlace(placeId: string, updates: Partial<Place>): Pro
   }
 
   if (!data || data.length === 0) {
+    console.error('❌ Aucune donnée retournée pour le lieu:', placeId);
+    console.error('📊 Données envoyées:', updates);
+    
+    // Vérifier si le lieu existe toujours
+    const { data: checkData, error: checkError } = await supabase
+      .from('places')
+      .select('id, title')
+      .eq('id', placeId);
+    
+    if (checkError) {
+      console.error('❌ Erreur lors de la vérification:', checkError);
+    } else if (!checkData || checkData.length === 0) {
+      console.error('❌ Le lieu n\'existe plus dans la base');
+    } else {
+      console.log('✅ Le lieu existe toujours:', checkData[0]);
+    }
+    
     throw new Error(`Aucune donnée retournée lors de la mise à jour du lieu: ${placeId}`);
   }
   
