@@ -44,3 +44,4 @@ VALUES (
 
 -- 7. Vérifier à nouveau après insertion
 SELECT 'Après insertion - Lieux dans 5km' as test, count_nearby_places(45.7772, 4.8559, 5.0) as result;
+

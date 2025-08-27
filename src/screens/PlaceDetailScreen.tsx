@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, SafeAreaView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, SafeAreaView, StatusBar, Linking, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
@@ -193,6 +193,51 @@ export default function PlaceDetailScreen() {
     </View>
   );
 
+  const openWithApp = async (app: 'google' | 'apple' | 'waze') => {
+    if (!place) return;
+    const lat = place.latitude;
+    const lng = place.longitude;
+
+    try {
+      if (app === 'waze') {
+        const url = `waze://?ll=${lat},${lng}&navigate=yes`;
+        const can = await Linking.canOpenURL(url);
+        if (can) return Linking.openURL(url);
+        return Linking.openURL(`https://waze.com/ul?ll=${lat}%2C${lng}&navigate=yes`);
+      }
+      if (app === 'google') {
+        const scheme = Platform.select({ ios: 'comgooglemaps://', android: 'google.navigation:' });
+        if (Platform.OS === 'android') {
+          const navUrl = `google.navigation:q=${lat},${lng}&mode=d`;
+          const can = await Linking.canOpenURL(navUrl);
+          if (can) return Linking.openURL(navUrl);
+        } else {
+          const mapsUrl = `comgooglemaps://?daddr=${lat},${lng}&directionsmode=driving`;
+          const can = await Linking.canOpenURL(mapsUrl);
+          if (can) return Linking.openURL(mapsUrl);
+        }
+        return Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat}%2C${lng}`);
+      }
+      if (app === 'apple') {
+        const url = `http://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+        return Linking.openURL(url);
+      }
+    } catch (e) {
+      Alert.alert('Erreur', "Impossible d'ouvrir l'application de navigation");
+    }
+  };
+
+  const chooseNavigationApp = () => {
+    const buttons: { text: string; onPress: () => void }[] = [];
+    if (Platform.OS === 'ios') {
+      buttons.push({ text: 'Plans (Apple Maps)', onPress: () => openWithApp('apple') });
+    }
+    buttons.push({ text: 'Google Maps', onPress: () => openWithApp('google') });
+    buttons.push({ text: 'Waze', onPress: () => openWithApp('waze') });
+    buttons.push({ text: 'Annuler', onPress: () => {}, });
+    Alert.alert("S'y rendre avec", 'Choisissez une application', buttons, { cancelable: true });
+  };
+
   if (loading && !place) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -239,6 +284,10 @@ export default function PlaceDetailScreen() {
           {place.description && place.description.trim() && (
             <Text style={styles.description}>{place.description}</Text>
           )}
+
+          <View style={{ marginTop: spacing.sm }}>
+            <Button title="S'y rendre avec" onPress={chooseNavigationApp} />
+          </View>
           
           <View style={styles.metaInfo}>
             {place.view_type && (

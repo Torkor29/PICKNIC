@@ -14,9 +14,10 @@ import {
   SafeAreaView,
   Platform,
   Animated,
+  AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
@@ -58,6 +59,10 @@ export default function MapScreen() {
   const chipsRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const { user } = useUser();
+  const appState = useRef(AppState.currentState);
+  const [mapKey, setMapKey] = useState(0);
+  const mapReadyRef = useRef(false);
+  const [mapRegion, setMapRegion] = useState<Region | null>(null);
   
   const [places, setPlaces] = useState<Place[]>([]);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
@@ -158,6 +163,14 @@ export default function MapScreen() {
   useEffect(() => {
     requestLocationPermission();
     loadPlaces();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        // Force un remount du composant MapView pour résoudre les écrans noirs/blancs après retour app
+        setMapKey((k) => k + 1);
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
   }, []);
 
   // Gérer le centrage sur un lieu depuis la liste
@@ -198,14 +211,20 @@ export default function MapScreen() {
       if (status === 'granted') {
         const location = await Location.getCurrentPositionAsync({});
         setUserLocation(location);
+        const region: Region = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        };
+        setMapRegion(region);
         
-        if (mapRef.current) {
-          mapRef.current.animateToRegion({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          });
+        if (mapRef.current && mapReadyRef.current) {
+          try {
+            // Essaye une caméra précise
+            await (mapRef.current as any).animateCamera?.({ center: { latitude: region.latitude, longitude: region.longitude }, zoom: 12 }, { duration: 500 });
+          } catch {}
+          mapRef.current.animateToRegion(region, 500);
         }
       }
     } catch (error) {
@@ -241,13 +260,18 @@ export default function MapScreen() {
           setSearchLocation({ latitude: location.latitude, longitude: location.longitude });
           
           // Déplacer la carte vers la localisation trouvée
+          const newRegion: Region = {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          };
+          setMapRegion(newRegion);
           if (mapRef.current) {
-            mapRef.current.animateToRegion({
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            });
+            try {
+              await (mapRef.current as any).animateCamera?.({ center: { latitude: newRegion.latitude, longitude: newRegion.longitude }, zoom: 12 }, { duration: 600 });
+            } catch {}
+            mapRef.current.animateToRegion(newRegion, 600);
           }
           
           // Filtrage des lieux autour de cette localisation
@@ -314,13 +338,18 @@ export default function MapScreen() {
     setAddressSuggestions([]);
     
     // Déplacer la carte vers la localisation sélectionnée
+    const newRegion: Region = {
+      latitude: suggestion.latitude,
+      longitude: suggestion.longitude,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    };
+    setMapRegion(newRegion);
     if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: suggestion.latitude,
-        longitude: suggestion.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
+      try {
+        (mapRef.current as any).animateCamera?.({ center: { latitude: newRegion.latitude, longitude: newRegion.longitude }, zoom: 12 }, { duration: 600 });
+      } catch {}
+      mapRef.current.animateToRegion(newRegion, 600);
     }
     
     // Filtrer les lieux autour de cette localisation
@@ -555,6 +584,7 @@ export default function MapScreen() {
       {/* Carte en plein écran */}
       <View style={styles.mapContainer}>
         <MapView
+          key={mapKey}
           ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
@@ -566,13 +596,17 @@ export default function MapScreen() {
           showsPointsOfInterest
           showsTraffic
           showsIndoors
+          loadingEnabled
+          loadingIndicatorColor="#4ecdc4"
+          loadingBackgroundColor="#ffffff"
           onPress={handleMapPress}
-          initialRegion={{
+          region={mapRegion ?? {
             latitude: userLocation?.coords.latitude || 48.8566,
             longitude: userLocation?.coords.longitude || 2.3522,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
+            latitudeDelta: 0.5,
+            longitudeDelta: 0.5,
           }}
+          onMapReady={() => { mapReadyRef.current = true; }}
           customMapStyle={[
             {
               "elementType": "geometry",
@@ -753,6 +787,7 @@ export default function MapScreen() {
                 longitude: place.longitude,
               }}
               onPress={() => handleMarkerPress(place)}
+              tracksViewChanges={false}
             >
               <View style={styles.markerContainer}>
                 <View style={[
@@ -761,7 +796,7 @@ export default function MapScreen() {
                 ]}>
                   <Ionicons 
                     name="restaurant" 
-                    size={16} 
+                    size={14} 
                     color={place.is_good_for_date ? "#fff" : "#1a1a2e"} 
                   />
                 </View>
@@ -1601,9 +1636,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   marker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1612,7 +1647,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 6,
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#1a1a2e',
   },
   markerDate: {
@@ -1624,9 +1659,9 @@ const styles = StyleSheet.create({
     top: -4,
     right: -4,
     backgroundColor: '#fff',
-    borderRadius: 10,
-    width: 18,
-    height: 18,
+    borderRadius: 9,
+    width: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',

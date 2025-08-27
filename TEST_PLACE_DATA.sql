@@ -87,3 +87,4 @@ SELECT
   SUM(CASE WHEN has_toilets THEN 1 ELSE 0 END) as avec_toilettes,
   SUM(CASE WHEN is_quiet THEN 1 ELSE 0 END) as calmes
 FROM places;
+

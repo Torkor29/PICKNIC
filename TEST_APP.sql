@@ -68,3 +68,4 @@ SELECT
   created_at
 FROM places
 ORDER BY created_at DESC;
+

@@ -35,3 +35,4 @@ $$ LANGUAGE plpgsql;
 
 -- Vérifier que la fonction fonctionne
 SELECT count_nearby_places(45.7772, 4.8559, 5.0);
+

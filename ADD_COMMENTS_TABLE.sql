@@ -40,3 +40,4 @@ CREATE POLICY "Users can delete their own place comments" ON place_comments FOR 
 
 
 
+

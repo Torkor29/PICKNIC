@@ -29,3 +29,4 @@ WHERE proname = 'calculate_distance';
 -- 6. Tester calculate_distance
 SELECT 'Test 4: calculate_distance' as test_name, 
        calculate_distance(45.7772, 4.8559, 45.7772, 4.8559) as distance_km;
+

@@ -86,3 +86,4 @@ SELECT 'Vérification finale - Politiques actives:' as info;
 SELECT COUNT(*) as nombre_politiques
 FROM pg_policies 
 WHERE tablename = 'places';
+

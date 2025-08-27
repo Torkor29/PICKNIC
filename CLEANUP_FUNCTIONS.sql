@@ -58,3 +58,4 @@ WHERE proname = 'count_nearby_places';
 
 -- 6. Tester la fonction
 SELECT 'Test de la fonction' as test, count_nearby_places(45.7772, 4.8559, 5.0) as result;
+

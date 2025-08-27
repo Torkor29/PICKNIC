@@ -69,3 +69,4 @@ Si vous rencontrez encore des erreurs :
 3. Enfin `TEST_APP.sql` pour vérifier
 
 L'application devrait maintenant fonctionner parfaitement ! 🎉
+

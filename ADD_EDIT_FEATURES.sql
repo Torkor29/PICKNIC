@@ -84,3 +84,4 @@ SELECT
   updated_at
 FROM places 
 LIMIT 5;
+

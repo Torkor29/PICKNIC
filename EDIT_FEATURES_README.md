@@ -118,3 +118,4 @@ Exécutez le script `ADD_EDIT_FEATURES.sql` dans Supabase pour :
 ---
 
 **🎉 L'édition des lieux est maintenant complètement fonctionnelle !**
+

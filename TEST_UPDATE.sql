@@ -66,3 +66,4 @@ WHERE title LIKE '%(test)%';
 SELECT 'Vérification finale - Lieux mis à jour:' as info, COUNT(*) as count 
 FROM places 
 WHERE updated_at IS NOT NULL;
+
