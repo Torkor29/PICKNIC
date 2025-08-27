@@ -41,6 +41,11 @@ const defineConfig = (): ExpoConfig => ({
       'RECEIVE_BOOT_COMPLETED',
       'VIBRATE',
     ],
+    config: {
+      googleMaps: {
+        apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY',
+      },
+    },
   },
   web: {
     favicon: './assets/favicon.png',
@@ -48,10 +53,17 @@ const defineConfig = (): ExpoConfig => ({
   extra: {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
   },
   plugins: [
     'expo-secure-store',
     'expo-notifications',
+    [
+      'react-native-maps',
+      {
+        googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY',
+      },
+    ],
   ],
   notification: {
     color: '#4CAF50',

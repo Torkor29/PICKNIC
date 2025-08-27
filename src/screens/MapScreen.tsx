@@ -587,7 +587,7 @@ export default function MapScreen() {
           key={mapKey}
           ref={mapRef}
           style={styles.map}
-          provider={PROVIDER_GOOGLE}
+          provider={Platform.OS === 'ios' ? PROVIDER_GOOGLE : undefined}
           showsUserLocation
           showsMyLocationButton={false}
           showsCompass
@@ -607,7 +607,7 @@ export default function MapScreen() {
             longitudeDelta: 0.5,
           }}
           onMapReady={() => { mapReadyRef.current = true; }}
-          customMapStyle={[
+          customMapStyle={Platform.OS === 'ios' ? [
             {
               "elementType": "geometry",
               "stylers": [{"color": "#f5f5f5"}]
@@ -769,7 +769,7 @@ export default function MapScreen() {
               "elementType": "geometry",
               "stylers": [{"color": "#f8f9fa"}]
             }
-          ]}
+          ] : undefined}
         >
           {selectedLocation && (
             <Marker coordinate={selectedLocation}>
